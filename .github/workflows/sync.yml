@@ -1,0 +1,64 @@
+name: Sync from Upstream
+
+on:
+  schedule:
+    # 每天凌晨 3 点自动同步
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    # 允许手动触发
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/Kyome22/RunCat365.git
+
+      - name: Fetch upstream changes
+        run: |
+          git fetch upstream
+
+      - name: Check if there are updates
+        id: check
+        run: |
+          # 检查 upstream/main 是否有新提交
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/main)
+          
+          if [ "$LOCAL" != "$UPSTREAM" ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "有新更新需要同步"
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "已是最新"
+          fi
+
+      - name: Merge upstream changes
+        if: steps.check.outputs.has_updates == 'true'
+        run: |
+          git merge upstream/main --no-edit
+          git push origin main
+
+      - name: Create Pull Request
+        if: steps.check.outputs.has_updates == 'true'
+        uses: actions/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Sync: Update from upstream repository'
+          title: 'Sync: Update from Kyome22/RunCat365'
+          body: |
+            自动从上游仓库 https://github.com/Kyome22/RunCat365 同步更新
+          branch: sync/upstream
+          delete-branch: true
